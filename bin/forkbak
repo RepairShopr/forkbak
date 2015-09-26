@@ -15,7 +15,7 @@ module Forkbak
   end
 
   def self.create_database
-    database_to_fork = heroku.config_var.info(ENV.fetch('FORK_FROM_APP'))['FORKBAK_DATABASE_URL']
+    database_to_fork = heroku.config_var.info(ENV.fetch('FORK_FROM_APP'))['DATABASE_URL']
     heroku.addon.create(ENV['APP'], {
       plan: "heroku-postgresql:standard-5",
       config: {
