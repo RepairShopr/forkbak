@@ -126,7 +126,7 @@ module Forkbak
       if response['errors']
         StatusError
       elsif response['finished_at']
-        if ENV['WEBHOOK_URL'].present?
+        if ENV['WEBHOOK_URL'].to_s.length > 0
           #get the public-url here and send it off to the webhook
           url = get_app_public_url
           send_url_to_webhookr(url)
