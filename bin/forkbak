@@ -9,20 +9,20 @@ $stdout.sync = true
 module Forkbak
   def self.heroku
     PlatformAPI.connect(
-      ENV.fetch("HEROKU_API_KEY"),
-      default_headers: {'Accept' => 'application/vnd.heroku+json; version=3.switzerland'}
+        ENV.fetch("HEROKU_API_KEY"),
+        default_headers: {'Accept' => 'application/vnd.heroku+json; version=3.switzerland'}
     )
   end
 
   def self.create_database
     database_to_fork = heroku.config_var.info(ENV.fetch('FORK_FROM_APP'))['DATABASE_URL']
     heroku.addon.create(ENV['APP'], {
-      plan: "heroku-postgresql:standard-5",
-      config: {
-        fork: database_to_fork,
-        fast: true
-      }
-    })
+                                      plan: "heroku-postgresql:standard-5",
+                                      config: {
+                                          fork: database_to_fork,
+                                          fast: true
+                                      }
+                                  })
   end
 
   def self.database_url(config_var)
@@ -39,12 +39,12 @@ module Forkbak
         host = host.gsub(/%2F/i, '/') if host
 
         params = [
-          host,
-          url.port || 5432,
-          nil, '',
-          url.path.gsub("/",""),
-          url.user,
-          url.password
+            host,
+            url.port || 5432,
+            nil, '',
+            url.path.gsub("/",""),
+            url.user,
+            url.password
         ]
         conn = PG::Connection.open(*params)
         result = conn.exec("SELECT pg_is_in_recovery()").values
@@ -109,9 +109,10 @@ module Forkbak
     def transfer!
 
       response = JSON.parse(
-        restclient_resource["/client/v11/databases/#{@db['name']}/backups"]
-          .post(expire: true)
+          restclient_resource["/client/v11/databases/#{@db['name']}/backups"]
+              .post(expire: true)
       )
+      puts "RESPONSE::::::::::::::::: #{response}"
       @transfer_id = response['uuid']
     rescue => e
       puts "Error attempting transfer: ##{e.class}: #{e.message}"
@@ -120,22 +121,55 @@ module Forkbak
 
     def transfer_status
       response = JSON.parse(
-        restclient_resource["/client/v11/databases/#{@db['name']}/transfers/#{@transfer_id}"].get
+          restclient_resource["/client/v11/databases/#{@db['name']}/transfers/#{@transfer_id}"].get
       )
       if response['errors']
         StatusError
       elsif response['finished_at']
+        if ENV['WEBHOOK_URL'].present?
+          #get the public-url here and send it off to the webhook
+          url = get_app_public_url
+          send_url_to_webhookr(url)
+        end
         StatusCompleted
       end
     rescue => e
       StatusUnknown
     end
 
+
+    def get_app_public_url
+      pg_resource ||= RestClient::Resource.new(
+          "https://:#{ENV['HEROKU_API_KEY']}@postgres-api.heroku.com"
+      )
+
+      #this was how I got a 301, which pointed to the other location
+      # begin
+      #   r = pg_resource["/client/v11/databases/#{@db['name']}/transfers/#{@transfer_id}/actions/public-url"].post(nil)
+      # rescue => e
+      #   puts e.url
+      # end
+
+      response = JSON.parse(
+          pg_resource["/client/v11/apps/#{@db['app']['id']}/transfers/#{@transfer_id}/actions/public-url"].post(nil)
+      )
+      response['url']
+    rescue => e
+      StatusUnknown
+    end
+
+    def send_url_to_webhookr(url)
+      r = RestClient.post(ENV['WEBHOOK_URL'], {secret: ENV['WEBHOOK_SECRET'], file_name: "latest.dump", date: Time.now.to_s.gsub(" ","_"), url: url})
+    end
+
+
+
     StatusCompleted = Class.new
     StatusError     = Class.new
     StatusUnknown   = Class.new
 
-  private
+    private
+
     def restclient_resource
       @restclient_resource ||= RestClient::Resource.new(
           "https://:#{ENV['HEROKU_API_KEY']}@shogun.heroku.com"
